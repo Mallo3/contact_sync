@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dynamic Cross-Platform Sync Sandbox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .node-card {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid #334155;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border-radius: 1rem;
+        }
+
+        /* Table Styles */
+        .db-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.75rem;
+        }
+
+        .db-table th,
+        .db-table td {
+            border: 1px solid #334155;
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        .db-table th {
+            background: #1e293b;
+            color: #94a3b8;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+
+        .db-table tr:nth-child(even) {
+            background: rgba(30, 41, 59, 0.4);
+        }
+
+        /* Flashing Animations */
+        @keyframes flash-row-update {
+            0% {
+                background-color: rgba(59, 130, 246, 0.6);
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
+
+        @keyframes flash-row-success {
+            0% {
+                background-color: rgba(16, 185, 129, 0.6);
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
+
+        @keyframes flash-row-error {
+            0% {
+                background-color: rgba(244, 63, 94, 0.8);
+            }
+
+            100% {
+                background-color: transparent;
+            }
+        }
+
+        .flash-update {
+            animation: flash-row-update 3s ease-out;
+        }
+
+        .flash-success {
+            animation: flash-row-success 3s ease-out;
+        }
+
+        .flash-error {
+            animation: flash-row-error 3s ease-out;
+        }
+
+        /* Payload Animation */
+        .payload {
+            position: fixed;
+            background: #3b82f6;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.6);
+            z-index: 50;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 1s cubic-bezier(0.4, 0, 0.2, 1);
+            transform: translate(-50%, -50%) scale(0.5);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .payload.active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* Controls */
+        .btn {
+            transition: all 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .btn:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(100%);
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        /* Logs & Connectors */
+        .log-container::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .log-container::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        .log-container::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 3px;
+        }
+
+        .service-connector {
+            width: 2px;
+            height: 12px;
+            background: #334155;
+            margin: 0 auto;
+            position: relative;
+            transition: all 0.3s;
+        }
+
+        .service-connector.active {
+            background: #3b82f6;
+            box-shadow: 0 0 8px #3b82f6;
+        }
+
+        .service-connector.error {
+            background: #f43f5e;
+            box-shadow: 0 0 8px #f43f5e;
+        }
+
+        /* Batch Progress Bar */
+        .batch-container {
+            display: none;
+            width: 100%;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 3px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .batch-bar {
+            height: 100%;
+            background: #a855f7;
+            width: 0%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-6 flex flex-col gap-6">
+
+    <!-- Header -->
+    <header class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+        <div>
+            <h1 class="text-2xl font-bold text-white flex items-center gap-3">
+                <i class="fa-solid fa-server text-blue-500"></i> Contact Architecture Sandbox
+            </h1>
+            <p class="text-slate-400 text-sm mt-1">Simulating Golang + Redis + Cassandra High-Scale Sync Engine</p>
+        </div>
+        <div>
+            <button onclick="resetSim()"
+                class="btn bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium text-sm border border-slate-600 flex items-center gap-2">
+                <i class="fa-solid fa-rotate-right"></i> Reset
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Architecture Visualizer -->
+    <main class="flex-1 flex flex-col lg:flex-row items-stretch justify-center gap-4 lg:gap-8 min-h-0 relative">
+        <div id="payload" class="payload"><i class="fa-solid fa-file-code"></i> <span id="payload-text">JSON
+                Payload</span></div>
+
+        <!-- 1. iOS Device -->
+        <div class="node-card flex-1 flex flex-col p-4" id="node-ios">
+            <div
+                class="flex flex-col xl:flex-row xl:items-center justify-between mb-4 border-b border-slate-700 pb-3 gap-3">
+                <div class="flex items-center gap-3">
+                    <i class="fa-brands fa-apple text-3xl text-slate-300"></i>
+                    <div>
+                        <h2 class="font-bold text-lg text-white leading-tight">iOS Device</h2>
+                        <div class="text-xs font-mono text-blue-400 mt-1">Token: <span id="ios-token">100</span></div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                    <button onclick="addLocal('ios')"
+                        class="global-action-btn btn bg-blue-600 hover:bg-blue-500 text-white p-1.5 px-2.5 rounded text-xs"
+                        title="Create Local Contact"><i class="fa-solid fa-plus"></i></button>
+                    <button onclick="doSync('ios')"
+                        class="global-action-btn btn bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 px-2.5 rounded text-xs font-bold"
+                        title="Standard Sync"><i class="fa-solid fa-rotate"></i> Sync</button>
+                    <button onclick="doBulkSyncPOC()"
+                        class="global-action-btn btn bg-purple-600 hover:bg-purple-500 text-white p-1.5 px-2.5 rounded text-xs font-bold shadow-lg shadow-purple-900/50 flex items-center gap-1">
+                        <i class="fa-solid fa-database"></i> 50k Bulk POC
+                    </button>
+                    <button onclick="doReinstall('ios')"
+                        class="global-action-btn btn bg-slate-700 hover:bg-rose-600 text-slate-300 hover:text-white p-1.5 px-2.5 rounded text-xs border border-slate-600"
+                        title="Uninstall/Reinstall (Wipe)"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </div>
+
+            <div id="ios-batch-ui" class="bg-slate-800 rounded-lg p-3 mb-3 border border-slate-700 hidden">
+                <div class="flex justify-between text-xs text-slate-400 mb-1"><span>Bulk Sync Progress</span><span
+                        id="ios-batch-text">0/50k</span></div>
+                <div class="batch-container !block">
+                    <div id="ios-batch-bar" class="batch-bar"></div>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-auto bg-slate-900/50 rounded-lg border border-slate-700/50 relative scroll-smooth"
+                id="ios-scroll-container">
+                <table class="db-table">
+                    <thead>
+                        <tr>
+                            <th>Apple_ID</th>
+                            <th>Backend_UUID</th>
+                            <th>Name</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="ios-db"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 2. Backend Server -->
+        <div class="node-card flex-[1.4] flex flex-col p-4 border-blue-500/30"
+            style="box-shadow: 0 0 30px rgba(59, 130, 246, 0.1);" id="node-backend">
+            <div class="flex items-center justify-between mb-3 border-b border-slate-700 pb-3">
+                <div class="flex items-center gap-3">
+                    <i class="fa-solid fa-cloud text-3xl text-blue-500"></i>
+                    <h2 class="font-bold text-lg text-white leading-tight">Contact Backend Cluster</h2>
+                </div>
+                <div class="bg-blue-900/40 px-3 py-1 rounded text-xs font-mono border border-blue-500/30 text-blue-200">
+                    Max Watermark: <span id="backend-token" class="text-white font-bold text-sm">100</span>
+                </div>
+            </div>
+
+            <!-- Service Routing Visuals -->
+            <div class="flex flex-col gap-1 mb-3 px-4">
+                <div id="layer-api"
+                    class="bg-slate-800 rounded p-2 text-center text-sm font-mono text-slate-400 border border-slate-700 transition-all duration-300">
+                    <i class="fa-solid fa-network-wired"></i> <span id="layer-api-text">API Gateway</span>
+                </div>
+                <div id="conn-1" class="service-connector"></div>
+                <div id="layer-engine"
+                    class="bg-slate-800 rounded p-2 text-center text-sm font-mono text-slate-400 border border-slate-700 transition-all duration-300">
+                    <i class="fa-brands fa-golang text-blue-400"></i> <span id="layer-engine-text">Golang Sync
+                        Engine</span>
+                </div>
+                <div id="conn-2" class="service-connector"></div>
+
+                <div id="layer-redis"
+                    class="bg-slate-800 rounded p-2 text-center text-sm font-mono text-slate-400 border border-slate-700 transition-all duration-300 flex justify-between items-center px-4">
+                    <span><i class="fa-solid fa-memory text-red-500"></i> <span id="layer-redis-text">Redis (Session
+                            Cursors)</span></span>
+                    <span id="redis-cursor"
+                        class="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-red-400 hidden">Cursor: 0</span>
+                </div>
+                <div id="conn-3" class="service-connector"></div>
+            </div>
+
+            <!-- Cassandra Database -->
+            <div id="layer-db"
+                class="flex-1 overflow-auto bg-slate-900/50 rounded-lg border border-slate-700/50 transition-all duration-300 relative scroll-smooth"
+                id="server-scroll-container">
+                <div
+                    class="absolute top-0 right-0 bg-slate-800 text-slate-400 text-[10px] px-2 py-1 rounded-bl border-b border-l border-slate-700 font-mono z-10">
+                    Cassandra (Storage)</div>
+                <table class="db-table mt-6">
+                    <thead>
+                        <tr>
+                            <th>UUID (PK)</th>
+                            <th>Name</th>
+                            <th>W_Mark</th>
+                            <th>Deleted?</th>
+                        </tr>
+                    </thead>
+                    <tbody id="backend-db"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 3. Android Device -->
+        <div class="node-card flex-1 flex flex-col p-4" id="node-android">
+            <div
+                class="flex flex-col xl:flex-row xl:items-center justify-between mb-4 border-b border-slate-700 pb-3 gap-3">
+                <div class="flex items-center gap-3">
+                    <i class="fa-brands fa-android text-3xl text-emerald-500"></i>
+                    <div>
+                        <h2 class="font-bold text-lg text-white leading-tight">Android Device</h2>
+                        <div class="text-xs font-mono text-emerald-400 mt-1">Token: <span id="android-token">100</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="addLocal('android')"
+                        class="global-action-btn btn bg-blue-600 hover:bg-blue-500 text-white p-1.5 px-2.5 rounded text-xs"
+                        title="Create Local Contact"><i class="fa-solid fa-plus"></i></button>
+                    <button onclick="doSync('android')"
+                        class="global-action-btn btn bg-emerald-600 hover:bg-emerald-500 text-white p-1.5 px-2.5 rounded text-xs font-bold"
+                        title="Standard Sync"><i class="fa-solid fa-rotate"></i> Sync</button>
+                    <button onclick="doReinstall('android')"
+                        class="global-action-btn btn bg-slate-700 hover:bg-amber-600 text-slate-300 hover:text-white p-1.5 px-2.5 rounded text-xs border border-slate-600"
+                        title="Uninstall/Reinstall (Wipe)"><i class="fa-solid fa-trash-can"></i></button>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-auto bg-slate-900/50 rounded-lg border border-slate-700/50 scroll-smooth"
+                id="android-scroll-container">
+                <table class="db-table">
+                    <thead>
+                        <tr>
+                            <th>_ID (Local)</th>
+                            <th>SOURCE_ID</th>
+                            <th>Name</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="android-db"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Network Logs -->
+    <footer class="h-48 shrink-0 node-card p-4 flex flex-col">
+        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+            <span><i class="fa-solid fa-terminal mr-2"></i>System & Network Log</span>
+        </h3>
+        <div id="logs"
+            class="flex-1 overflow-y-auto log-container code-font text-xs space-y-1.5 bg-slate-950 p-3 rounded border border-slate-800">
+        </div>
+    </footer>
+
+    <script>
+        // --- State Management ---
+        let state = {};
+        let isAnimating = false;
+        const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+        function genUUID() { return 'usr_' + Math.random().toString(36).substr(2, 4).toUpperCase(); }
+        function genLocalId(device) { return device === 'ios' ? 'CN-' + Math.random().toString(36).substr(2, 4).toUpperCase() : 'RAW-' + Math.floor(Math.random() * 1000); }
+
+        function initData() {
+            state = {
+                server: { wm: 100, db: [{ uuid: 'usr_Contact', name: 'CEO Contact', wm: 80, is_deleted: false, _flash: '' }] },
+                ios: { token: 100, db: [{ localId: 'CN-8F2A', backendUuid: 'usr_Contact', name: 'CEO Contact', _dirty: false, _deleted: false, _flash: '' }] },
+                android: { token: 100, db: [{ localId: 'RAW-42', backendUuid: 'usr_Contact', name: 'CEO Contact', _dirty: false, _deleted: false, _flash: '' }] }
+            };
+            document.getElementById('ios-batch-ui').classList.add('hidden');
+            document.getElementById('redis-cursor').classList.add('hidden');
+        }
+
+        // --- UI Rendering ---
+        function renderTables() {
+            document.getElementById('backend-db').innerHTML = state.server.db.map(c => `
+                <tr class="${c._flash}"><td class="code-font text-purple-400">${c.uuid}</td>
+                <td class="${c.is_deleted ? 'text-slate-500 line-through' : 'text-slate-200'}">${c.name}</td>
+                <td class="code-font font-bold text-blue-400">${c.wm}</td><td class="code-font ${c.is_deleted ? 'text-rose-400' : 'text-emerald-400'}">${c.is_deleted}</td></tr>
+            `).join('');
+            document.getElementById('backend-token').innerText = state.server.wm;
+
+            const renderDeviceRow = (device, c) => `
+                <tr class="${c._deleted ? 'opacity-50' : ''} ${c._flash}">
+                <td class="code-font text-slate-400">${c.localId}</td><td class="code-font text-purple-400">${c.backendUuid}</td>
+                <td>${c._dirty ? '<span class="text-yellow-400">● </span>' : ''}<span class="${c._deleted ? 'line-through text-slate-500' : 'text-slate-200'}">${c.name}</span></td>
+                <td class="text-center"><button onclick="deleteLocal('${device}', '${c.backendUuid}')" class="text-rose-500 hover:text-rose-400" ${c._deleted || isAnimating ? 'disabled' : ''}><i class="fa-solid fa-trash text-xs"></i></button></td></tr>
+            `;
+
+            document.getElementById('ios-db').innerHTML = state.ios.db.map(c => renderDeviceRow('ios', c)).join('');
+            document.getElementById('ios-token').innerText = state.ios.token;
+            document.getElementById('android-db').innerHTML = state.android.db.map(c => renderDeviceRow('android', c)).join('');
+            document.getElementById('android-token').innerText = state.android.token;
+
+            document.querySelectorAll('.global-action-btn').forEach(btn => btn.disabled = isAnimating);
+        }
+
+        // --- UI Scrolling Utility ---
+        function scrollTableToBottom(containerId) {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.scrollTop = container.scrollHeight;
+            }
+        }
+
+        // --- Visual Service Layer Control ---
+        function setLayer(layer, stateText, classes, activeConns = []) {
+            const el = document.getElementById(`layer-${layer}`);
+            el.className = `bg-slate-800 rounded p-2 text-center text-sm font-mono transition-all duration-300 flex justify-center items-center gap-2 ${classes}`;
+            document.getElementById(`layer-${layer}-text`).innerText = stateText;
+
+            [1, 2, 3].forEach(i => document.getElementById(`conn-${i}`).classList.remove('active', 'error'));
+            activeConns.forEach(i => {
+                if (i.includes('err')) document.getElementById(`conn-${i.replace('err', '')}`).classList.add('error');
+                else document.getElementById(`conn-${i}`).classList.add('active');
+            });
+        }
+
+        function resetLayers() {
+            setLayer('api', 'API Gateway', 'text-slate-400 border border-slate-700');
+            setLayer('engine', 'Golang Sync Engine', 'text-slate-400 border border-slate-700');
+            document.getElementById(`layer-redis`).className = `bg-slate-800 rounded p-2 text-sm font-mono text-slate-400 border border-slate-700 transition-all duration-300 flex justify-between items-center px-4`;
+            document.getElementById(`layer-redis-text`).innerText = 'Redis (Session Cursors)';
+            document.getElementById('layer-db').classList.remove('border-blue-500', 'border-purple-500', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]', 'shadow-[0_0_15px_rgba(168,85,247,0.3)]', 'border-yellow-500', 'shadow-[0_0_15px_rgba(234,179,8,0.3)]');
+            [1, 2, 3].forEach(i => document.getElementById(`conn-${i}`).classList.remove('active', 'error'));
+        }
+
+        // --- Logging & Animations ---
+        function logTraffic(source, type, title, message, colorClass) {
+            const logs = document.getElementById('logs');
+            const time = new Date().toISOString().split('T')[1].substring(0, 8);
+            logs.insertAdjacentHTML('beforeend', `<div class="flex flex-col md:flex-row md:items-baseline gap-1 md:gap-3 mb-1"><span class="text-slate-500 shrink-0">[${time}]</span><span class="font-bold ${colorClass} shrink-0 min-w-[120px]">${source}</span><span class="text-yellow-300 font-bold shrink-0 min-w-[60px]">${type}</span><span class="text-slate-300">${title} ${message ? `<span class="text-slate-400 italic">${message}</span>` : ''}</span></div>`);
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function doAnimate(fromId, toId, text, color) {
+            return new Promise(resolve => {
+                const p = document.getElementById('payload');
+                const fromRect = document.getElementById(fromId).getBoundingClientRect();
+                const toRect = document.getElementById(toId).getBoundingClientRect();
+
+                p.style.transition = 'none'; p.style.left = `${fromRect.left + fromRect.width / 2}px`; p.style.top = `${fromRect.top + fromRect.height / 2}px`;
+                p.style.backgroundColor = color; p.style.boxShadow = `0 0 15px ${color}`;
+                document.getElementById('payload-text').innerText = text;
+
+                p.offsetHeight; // Reflow
+
+                p.style.transition = 'all 1s cubic-bezier(0.4, 0, 0.2, 1)'; p.classList.add('active');
+                p.style.left = `${toRect.left + toRect.width / 2}px`; p.style.top = `${toRect.top + toRect.height / 2}px`;
+                setTimeout(() => { p.classList.remove('active'); setTimeout(resolve, 300); }, 1000);
+            });
+        }
+
+        function clearFlashes() { ['server', 'ios', 'android'].forEach(k => state[k].db.forEach(r => r._flash = '')); }
+        function addLocal(device) {
+            clearFlashes();
+            state[device].db.push({ localId: genLocalId(device), backendUuid: genUUID(), name: `User ${Math.floor(Math.random() * 999)}`, _dirty: true, _deleted: false, _flash: 'flash-update' });
+            renderTables();
+            setTimeout(() => scrollTableToBottom(`${device}-scroll-container`), 50);
+        }
+        function deleteLocal(device, uuid) { clearFlashes(); const r = state[device].db.find(c => c.backendUuid === uuid); if (r) { r._deleted = true; r._dirty = true; r._flash = 'flash-delete'; renderTables(); } }
+
+        // --- Standard Sync (Fully Restored + UX Fix) ---
+        async function doSync(device) {
+            if (isAnimating) return; isAnimating = true; clearFlashes(); renderTables();
+            const devState = state[device];
+            const dName = device === 'ios' ? 'iOS' : 'Android';
+            const pushes = devState.db.filter(c => c._dirty);
+
+            // 1. PUSH PHASE
+            if (pushes.length > 0) {
+                logTraffic(`${dName} ➔ API Gateway`, 'POST /sync', `Pushing ${pushes.length} deltas.`, '', 'text-blue-400');
+                await doAnimate(`node-${device}`, 'layer-api', `POST: ${pushes.length} local changes`, '#3b82f6');
+
+                setLayer('api', 'Receiving POST Request', 'text-blue-300 bg-blue-900/50 border-blue-500', ['1']); await sleep(800);
+                setLayer('engine', 'Calculating Watermarks', 'text-purple-300 bg-purple-900/50 border-purple-500', ['1', '2']);
+                document.getElementById('layer-db').classList.add('border-blue-500', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]');
+                await sleep(1000);
+
+                pushes.forEach(p => {
+                    state.server.wm++;
+                    const existing = state.server.db.find(s => s.uuid === p.backendUuid);
+                    if (existing) {
+                        existing.name = p.name; existing.is_deleted = p._deleted; existing.wm = state.server.wm;
+                        existing._flash = p._deleted ? 'flash-delete' : 'flash-update';
+                    } else {
+                        state.server.db.push({ uuid: p.backendUuid, name: p.name, wm: state.server.wm, is_deleted: p._deleted, _flash: 'flash-update' });
+                    }
+                });
+                renderTables();
+                scrollTableToBottom('server-scroll-container');
+                logTraffic(`Cassandra`, 'WRITE', `Saved to storage. New Max Watermark: ${state.server.wm}`, '', 'text-yellow-400'); await sleep(1000);
+            }
+
+            resetLayers();
+
+            // 2. PULL PHASE
+            const pulls = state.server.db.filter(s => s.wm > devState.token);
+            logTraffic(`${dName} ➔ API Gateway`, 'GET /sync', `Requesting changes since Token ${devState.token}`, '', 'text-emerald-400');
+            await doAnimate(`node-${device}`, 'layer-api', `GET ?token=${devState.token}`, '#10b981');
+
+            setLayer('api', `Processing GET Request`, 'text-emerald-300 bg-emerald-900/50 border-emerald-500', ['1']); await sleep(800);
+            setLayer('engine', `Querying DB for W_Mark > ${devState.token}`, 'text-yellow-300 bg-yellow-900/50 border-yellow-500', ['1', '2']);
+            document.getElementById('layer-db').classList.add('border-yellow-500', 'shadow-[0_0_15px_rgba(234,179,8,0.3)]');
+            pulls.forEach(p => p._flash = 'flash-success'); renderTables(); await sleep(1000);
+
+            if (pulls.length > 0) {
+                logTraffic(`Sync Engine`, 'RESPOND', `Found ${pulls.length} deltas. Routing to ${dName}...`, '', 'text-emerald-400');
+                await doAnimate('layer-api', `node-${device}`, `Payload: ${pulls.length} deltas`, '#10b981');
+
+                pulls.forEach(pull => {
+                    const local = devState.db.find(c => c.backendUuid === pull.uuid);
+                    if (local) {
+                        if (pull.is_deleted) { local._remove_entirely = true; }
+                        else { local.name = pull.name; local._dirty = false; local._deleted = false; local._flash = 'flash-update'; }
+                    } else if (!pull.is_deleted) {
+                        devState.db.push({ localId: genLocalId(device), backendUuid: pull.uuid, name: pull.name, _dirty: false, _deleted: false, _flash: 'flash-success' });
+                    }
+                });
+            } else { await doAnimate('layer-api', `node-${device}`, '200 OK: Up to date', '#64748b'); }
+
+            resetLayers();
+            devState.db = devState.db.filter(c => !c._remove_entirely && !c._deleted); devState.db.forEach(c => c._dirty = false);
+            devState.token = state.server.wm;
+
+            logTraffic('System', 'SUCCESS', 'Standard Sync Complete', `${dName} is now synchronized.`, 'text-purple-400');
+
+            // BUG FIX: Removed clearFlashes() here so the UI actually renders the green flash animations.
+            isAnimating = false;
+            renderTables();
+            setTimeout(() => scrollTableToBottom(`${device}-scroll-container`), 50);
+        }
+
+        // --- NEW: 50k Bulk Sync with Checkpointing (Golang + Redis + Cassandra) ---
+        async function doBulkSyncPOC() {
+            if (isAnimating) return; isAnimating = true; clearFlashes(); renderTables();
+
+            const totalBatches = 5; // Simulating 5 batches of 10,000 each
+            const batchSize = 10000;
+            let currentCursor = 0;
+            let sessionId = 'sess_' + Math.floor(Math.random() * 9999);
+
+            const uiBatch = document.getElementById('ios-batch-ui');
+            const uiText = document.getElementById('ios-batch-text');
+            const uiBar = document.getElementById('ios-batch-bar');
+            const redisCursor = document.getElementById('redis-cursor');
+
+            uiBatch.classList.remove('hidden'); redisCursor.classList.remove('hidden');
+            uiBar.style.width = '0%'; uiBar.style.background = '#a855f7';
+            redisCursor.innerText = 'Cursor: 0';
+
+            logTraffic('iOS App', 'POST', '/sync/session', `Initializing 50k bulk upload.`, 'text-purple-400');
+            await doAnimate('node-ios', 'layer-api', 'Init Session', '#a855f7');
+
+            setLayer('api', 'Routing to Engine', 'text-purple-300 bg-purple-900/50 border-purple-500', ['1']); await sleep(600);
+            setLayer('engine', 'Golang: Creating Session', 'text-purple-300 bg-purple-900/50 border-purple-500', ['1', '2']); await sleep(600);
+
+            document.getElementById(`layer-redis`).className = `bg-red-900/40 rounded p-2 text-sm font-mono text-red-300 border border-red-500 transition-all duration-300 flex justify-between items-center px-4`;
+            logTraffic('Redis', 'SET', `sess:${sessionId}:cursor`, `0`, 'text-red-400');
+            await sleep(800);
+
+            // BATCH LOOP
+            for (let i = 1; i <= totalBatches; i++) {
+                const isGlitch = (i === 3 && currentCursor < 20000);
+
+                logTraffic('iOS App', 'POST', `/sync/batch`, `Uploading Batch ${i}/5 [Contacts ${currentCursor} to ${currentCursor + batchSize}]`, 'text-blue-400');
+                await doAnimate('node-ios', 'layer-api', `Batch ${i} (${batchSize} items)`, '#3b82f6');
+
+                if (isGlitch) {
+                    setLayer('api', 'CONNECTION DROPPED', 'text-rose-300 bg-rose-900/50 border-rose-500', ['err1']);
+                    uiBar.style.background = '#f43f5e'; // Red bar
+                    logTraffic('Network', 'ERROR', `Timeout during Batch 3 upload!`, 'Connection severed.', 'text-rose-500');
+                    await doAnimate('layer-api', 'node-ios', `503 Service Unavailable`, '#f43f5e');
+                    await sleep(1500);
+
+                    logTraffic('iOS App', 'RETRY', `Network recovered. Querying Redis for checkpoint...`, '', 'text-yellow-400');
+                    await doAnimate('node-ios', 'layer-api', `GET /sync/session/${sessionId}`, '#eab308');
+                    setLayer('api', 'Routing Resume', 'text-yellow-300 bg-yellow-900/50 border-yellow-500', ['1']);
+                    setLayer('engine', 'Checking Redis', 'text-yellow-300 bg-yellow-900/50 border-yellow-500', ['1', '2']);
+
+                    document.getElementById(`layer-redis`).className = `bg-red-900/40 rounded p-2 text-sm font-mono text-red-300 border border-red-500 transition-all duration-300 flex justify-between items-center px-4 shadow-[0_0_15px_rgba(248,113,113,0.4)]`;
+                    logTraffic('Redis', 'GET', `sess:${sessionId}:cursor`, `Returned ${currentCursor}`, 'text-red-400');
+                    await sleep(1200);
+
+                    logTraffic('iOS App', 'INFO', `Checkpoint found. Resuming from contact ${currentCursor}.`, 'Instead of starting over!', 'text-emerald-400');
+                    uiBar.style.background = '#a855f7'; // Back to purple
+                    i--; // Decrement i to retry batch 3
+                    continue;
+                }
+
+                setLayer('api', 'Receiving Batch', 'text-blue-300 bg-blue-900/50 border-blue-500', ['1']); await sleep(600);
+                setLayer('engine', 'Golang: Mapping to Cassandra', 'text-blue-300 bg-blue-900/50 border-blue-500', ['1', '2']); await sleep(600);
+                document.getElementById('layer-db').classList.add('border-blue-500', 'shadow-[0_0_15px_rgba(59,130,246,0.3)]');
+
+                state.server.wm++;
+                state.server.db.push({ uuid: `bulk_batch_${i}`, name: `Bulk Pack ${i}`, wm: state.server.wm, is_deleted: false, _flash: 'flash-update' });
+                state.ios.db.push({
+                    localId: genLocalId('ios'),
+                    backendUuid: `bulk_batch_${i}`,
+                    name: `Bulk Pack ${i}`,
+                    _dirty: false,
+                    _deleted: false,
+                    _flash: 'flash-success'
+                });
+                renderTables();
+                scrollTableToBottom('server-scroll-container');
+                logTraffic('Cassandra', 'INSERT', `Batch ${i} written successfully.`, '', 'text-blue-300');
+                await sleep(800);
+
+                currentCursor += batchSize;
+                redisCursor.innerText = `Cursor: ${currentCursor}`;
+                document.getElementById(`layer-redis`).className = `bg-red-900/40 rounded p-2 text-sm font-mono text-red-300 border border-red-500 transition-all duration-300 flex justify-between items-center px-4 shadow-[0_0_15px_rgba(248,113,113,0.4)]`;
+                logTraffic('Redis', 'SET', `sess:${sessionId}:cursor`, `Updated to ${currentCursor}`, 'text-red-400');
+
+                uiText.innerText = `${currentCursor / 1000}k / 50k`;
+                uiBar.style.width = `${(currentCursor / 50000) * 100}%`;
+
+                await doAnimate('layer-api', 'node-ios', `200 OK (ACK Batch ${i})`, '#10b981');
+                await sleep(800);
+            }
+
+            // --- NEW: satisfying visual conclusion for the POC ---
+            state.ios.token = state.server.wm; // Update the device token
+            renderTables(); // Re-render to show updated token
+
+            logTraffic('System', 'SUCCESS', '50k Bulk Sync Completed via Checkpoints!', 'Resilient to network failures.', 'text-emerald-400');
+
+            // Visual success state for the progress bar
+            uiBar.style.background = '#10b981'; // Turn green
+            uiText.innerText = "Complete! (50k/50k)";
+
+            resetLayers();
+
+            await sleep(2000); // Let the user see the 100% green bar before it vanishes
+
+            uiBatch.classList.add('hidden');
+            redisCursor.classList.add('hidden');
+            isAnimating = false;
+            renderTables(); // Unlock buttons
+        }
+
+        // --- REINSTALL (Fully Restored WIPE & DEDUPLICATE Logic) ---
+        async function doReinstall(device) {
+            if (isAnimating) return; isAnimating = true; clearFlashes();
+            const dName = device === 'ios' ? 'iOS' : 'Android';
+
+            // 1. Wipe State
+            state[device].db = []; state[device].token = 0;
+            renderTables();
+            logTraffic('System', 'WARN', 'App Wiped', `${dName} local database and token destroyed.`, 'text-orange-400');
+            await sleep(1000);
+
+            // 2. Full Pull Request
+            logTraffic(`${dName} ➔ API Gateway`, 'GET /sync', `Requesting Full Pull (Token 0)`, '', 'text-orange-400');
+            await doAnimate(`node-${device}`, 'layer-api', 'GET: Token 0 (Full Pull)', '#f97316');
+
+            setLayer('api', 'Routing Full Pull', 'text-orange-300 bg-orange-900/50 border-orange-500', ['1']); await sleep(800);
+            setLayer('engine', 'Filtering out Tombstones', 'text-yellow-300 bg-yellow-900/50 border-yellow-500', ['1', '2']);
+
+            const activeRecords = state.server.db.filter(c => !c.is_deleted);
+            activeRecords.forEach(r => r._flash = 'flash-success');
+            document.getElementById('layer-db').classList.add('border-yellow-500', 'shadow-[0_0_15px_rgba(234,179,8,0.3)]');
+            renderTables();
+            await sleep(1200);
+
+            await doAnimate('layer-api', `node-${device}`, `Payload: Active Data`, '#10b981');
+            resetLayers();
+
+            // 3. Rebuild Deduplication Map
+            state[device].token = state.server.wm;
+            activeRecords.forEach(c => {
+                state[device].db.push({ localId: genLocalId(device), backendUuid: c.uuid, name: c.name, _dirty: false, _deleted: false, _flash: 'flash-success' });
+            });
+
+            logTraffic('System', 'SUCCESS', 'Deduplication Complete', `Mapping rebuilt for ${dName}.`, 'text-emerald-400');
+            isAnimating = false; renderTables();
+            setTimeout(() => scrollTableToBottom(`${device}-scroll-container`), 50);
+        }
+
+        function resetSim() { if (!isAnimating) { initData(); document.getElementById('logs').innerHTML = ''; renderTables(); resetLayers(); } }
+        initData(); renderTables();
+    </script>
+</body>
+
+</html>
